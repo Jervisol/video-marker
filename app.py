@@ -10,52 +10,72 @@ from loguru import logger
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 app.config['ALLOWED_EXTENSIONS'] = {'mp4', 'avi', 'mov', 'mkv'}
-app.config['SECRET_KEY'] = 'your-secret-key'
+app.config['SECRET_KEY'] = 'your-secret-key'  # 用于WebSocket加密
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
+# 初始化SocketIO
 socketio = SocketIO(app)
 
-model_loaded = False
-error_messages = []
+# 加载所有支持的模型
+try:
+    # 尝试从本地加载自定义模型
+    custom_model = YOLO('custom.pt')
+    logger.info("Custom YOLO model detected")
+except Exception as e:
+    custom_model = None
+    logger.warning(f"Error loading custom model: {e}")
 
 try:
-    model = YOLO('custom.pt')
-    logger.info("Custom YOLO model detected")
-    model_loaded = True
+    yolo11n_model = YOLO('yolo11n.pt')
+    logger.info("Successfully loaded YOLO11n model")
 except Exception as e:
-    error_messages.append(f"Error loading custom model: {e}")
+    yolo11n_model = None
+    logger.warning(f"Error loading YOLO11n: {e}")
 
-if not model_loaded:
-    try:
-        model = YOLO('yolo11n.pt')
-        logger.info("Successfully loaded YOLO11n model")
-        model_loaded = True
-    except Exception as e:
-        error_messages.append(f"Error loading YOLO11n: {e}")
+try:
+    yolov8n_model = YOLO('yolov8n.pt')
+    logger.info("Successfully loaded YOLOv8n model")
+except Exception as e:
+    yolov8n_model = None
+    logger.warning(f"Error loading YOLOv8n: {e}")
 
-if not model_loaded:
-    try:
-        model = YOLO('yolov8n.pt')
-        logger.info("Successfully loaded YOLOv8n model")
-        model_loaded = True
-    except Exception as e:
-        error_messages.append(f"Error loading YOLOv8n: {e}")
+try:
+    # 尝试加载EfficientDet模型（使用ultralytics支持的格式）
+    efficientdet_model = YOLO('efficientdet-lite0.pt')
+    logger.info("Successfully loaded EfficientDet model")
+except Exception as e:
+    efficientdet_model = None
+    logger.warning(f"Error loading EfficientDet: {e}")
 
-if not model_loaded:
-    logger.info("Failed to load any YOLO model:")
-    for msg in error_messages:
-        logger.info(f"  - {msg}")
+# 模型映射
+trained_models = {
+    'yolo11n': yolo11n_model,
+    'yolov8n': yolov8n_model,
+    'custom': custom_model,
+    'efficientdet': efficientdet_model
+}
+
+# 过滤掉加载失败的模型
+trained_models = {k: v for k, v in trained_models.items() if v is not None}
+
+# 如果没有模型加载成功，抛出异常
+if not trained_models:
+    logger.error("Failed to load any model")
     raise RuntimeError("model load failed")
 
-CLASSES = model.names
+# 设置默认模型
+default_model = next(iter(trained_models.keys()))
+
+# 类别名称（使用默认模型的类别）
+CLASSES = trained_models[default_model].names
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 @app.route('/')
 def index():
-    return render_template('index.html', classes=CLASSES)
+    return render_template('index.html', classes=CLASSES, trained_models=trained_models, default_model=default_model)
 
 @app.route('/upload', methods=['POST'])
 def upload_video():
@@ -76,6 +96,7 @@ def detect_objects():
     data = request.json
     video_path = data.get('video_path')
     selected_classes = data.get('selected_classes', [])
+    selected_model = data.get('selected_model', default_model)
     
     if not video_path:
         return jsonify({'error': 'No video path provided'})
@@ -84,6 +105,9 @@ def detect_objects():
     
     if not os.path.exists(full_video_path):
         return jsonify({'error': 'Video file not found'})
+    
+    # 获取选择的模型
+    current_model = trained_models[selected_model]
     
     cap = cv2.VideoCapture(full_video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -102,14 +126,15 @@ def detect_objects():
         if not ret:
             break
         
-        results = model(frame)
+        results = current_model(frame)
         
         # 绘制检测结果
         for result in results:
             boxes = result.boxes
             for box in boxes:
                 cls = int(box.cls[0])
-                class_name = CLASSES[cls]
+                # 使用当前模型的类别名称
+                class_name = current_model.names[cls]
                 
                 # 只处理选中的类别
                 if selected_classes and class_name not in selected_classes:
@@ -139,6 +164,7 @@ def detect_frame():
     data = request.json
     frame_data = data.get('frame_data')
     selected_classes = data.get('selected_classes', [])
+    selected_model = data.get('selected_model', default_model)
     
     if not frame_data:
         return jsonify({'error': 'No frame data provided'})
@@ -149,14 +175,18 @@ def detect_frame():
         img = Image.open(BytesIO(img_data))
         frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         
-        results = model(frame)
+        # 获取选择的模型
+        current_model = trained_models[selected_model]
+        
+        results = current_model(frame)
         
         detections = []
         for result in results:
             boxes = result.boxes
             for box in boxes:
                 cls = int(box.cls[0])
-                class_name = CLASSES[cls]
+                # 使用当前模型的类别名称
+                class_name = current_model.names[cls]
                 
                 # 只处理选中的类别
                 if selected_classes and class_name not in selected_classes:
@@ -188,6 +218,7 @@ def handle_detect_frame(data):
     
     frame_data = data.get('frame_data')
     selected_classes = data.get('selected_classes', [])
+    selected_model = data.get('selected_model', default_model)
     
     if not frame_data:
         emit('detection_result', {'error': 'No frame data provided'})
@@ -199,14 +230,19 @@ def handle_detect_frame(data):
         img = Image.open(BytesIO(img_data))
         frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         
-        results = model(frame)
+        # 获取选择的模型
+        current_model = trained_models[selected_model]
+        
+        # 使用选择的模型进行检测
+        results = current_model(frame)
         
         detections = []
         for result in results:
             boxes = result.boxes
             for box in boxes:
                 cls = int(box.cls[0])
-                class_name = CLASSES[cls]
+                # 使用当前模型的类别名称
+                class_name = current_model.names[cls]
                 
                 # 只处理选中的类别
                 if selected_classes and class_name not in selected_classes:
@@ -241,6 +277,7 @@ def detect_click():
     frame_data = data.get('frame_data')
     click_x = data.get('click_x')
     click_y = data.get('click_y')
+    selected_model = data.get('selected_model', default_model)
     
     if not frame_data:
         return jsonify({'error': 'No frame data provided'})
@@ -254,7 +291,10 @@ def detect_click():
         img = Image.open(BytesIO(img_data))
         frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
         
-        results = model(frame)
+        # 获取选择的模型
+        current_model = trained_models[selected_model]
+        
+        results = current_model(frame)
         
         closest_detection = None
         min_distance = float('inf')
@@ -263,7 +303,8 @@ def detect_click():
             boxes = result.boxes
             for box in boxes:
                 cls = int(box.cls[0])
-                class_name = CLASSES[cls]
+                # 使用当前模型的类别名称
+                class_name = current_model.names[cls]
                 
                 # 获取边界框坐标
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -293,4 +334,4 @@ def detect_click():
         return jsonify({'error': str(e)})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)

@@ -211,6 +211,14 @@
             </div>
             
             <div class="controls-section">
+                <h3 style="margin-bottom: 15px;">模型选择</h3>
+                <div style="margin-bottom: 20px;">
+                    <select id="model-select" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 16px;">
+                        {% for model_name in trained_models %}
+                            <option value="{{ model_name }}" {% if model_name == default_model %}selected{% endif %}>{{ model_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <h3 style="display: flex; justify-content: space-between; align-items: center;">
                     选择检测物品
                     <div style="display: flex; align-items: center; gap: 5px;">
@@ -397,11 +405,15 @@
                         // 将canvas转换为base64字符串
                         const frameData = canvasElement.toDataURL('image/jpeg');
                         
+                        // 获取用户选择的模型
+                        const selectedModel = document.getElementById('model-select').value;
+                        
                         try {
                             // 通过WebSocket发送帧数据到服务器进行检测
                             socket.emit('detect_frame', {
                                 frame_data: frameData.split(',')[1], // 移除base64前缀
-                                selected_classes: selectedClasses
+                                selected_classes: selectedClasses,
+                                selected_model: selectedModel
                             });
                         } catch (error) {
                             console.error('检测过程中发生错误:', error);
