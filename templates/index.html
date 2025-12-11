@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>视频实时标记系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #2c3e50;
+        }
+        
+        .upload-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .upload-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .upload-form input[type="file"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .upload-form button {
+            padding: 10px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .upload-form button:hover {
+            background-color: #2980b9;
+        }
+        
+        .main-content {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .video-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            flex: 2;
+            min-width: 300px;
+        }
+        
+        .controls-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            flex: 1;
+            min-width: 300px;
+        }
+        
+        video {
+            width: 100%;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        
+        .video-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .video-controls button {
+            padding: 8px 16px;
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .video-controls button:hover {
+            background-color: #229954;
+        }
+        
+        .video-controls button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .classes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+        }
+        
+        .class-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        
+        .class-item input[type="checkbox"] {
+            transform: scale(1.2);
+        }
+        
+        .class-item label {
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e8f4f8;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+        
+        .status.error {
+            background-color: #f8e8e8;
+            border-left-color: #e74c3c;
+        }
+        
+        .status.success {
+            background-color: #e8f8e8;
+            border-left-color: #27ae60;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>视频实时标记系统Demo</h1>
+        
+        <div class="upload-section">
+            <form class="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+                <input type="file" name="video" accept="video/*" required>
+                <button type="submit">上传视频</button>
+            </form>
+        </div>
+        
+        <div class="main-content">
+            <div class="video-section">
+                {% if request.args.get('video') %}
+                    <div style="position: relative; display: inline-block; width: 100%;" id="video-container" onclick="handleVideoClick(event)">
+                        <video id="original-video" controls style="width: 100%;" onclick="event.preventDefault();">
+                            <source src="/static/uploads/{{ request.args.get('video') }}" type="video/mp4">
+                            您的浏览器不支持视频播放。
+                        </video>
+                        <canvas id="detection-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: auto; pointer-events: none;"></canvas>
+                    </div>
+                    
+                    <div style="position: relative; display: inline-block; width: 100%; display: none;">
+                        <video id="processed-video" controls style="width: 100%;" onclick="event.preventDefault();">
+                            <source id="processed-source" src="" type="video/mp4">
+                            您的浏览器不支持视频播放。
+                        </video>
+                    </div>
+                    
+                    <div class="video-controls">
+                        <button id="detect-btn" onclick="detectObjects()">开始检测</button>
+                        <button id="reset-btn" onclick="resetVideo()">重置</button>
+                    </div>
+                    
+                    <div id="status" class="status">
+                        请选择要检测的物品，然后点击"开始检测"按钮。
+                    </div>
+                {% else %}
+                    <div style="text-align: center; padding: 50px; color: #666;">
+                        请先上传视频文件
+                    </div>
+                {% endif %}
+            </div>
+            
+            <div class="controls-section">
+                <h3 style="display: flex; justify-content: space-between; align-items: center;">
+                    选择检测物品
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()" style="transform: scale(1.2);">
+                        <label for="select-all-checkbox" style="user-select: none; cursor: pointer;">全选</label>
+                    </div>
+                </h3>
+                <div class="classes-grid">
+                    {% for class_id, class_name in classes.items() %}
+                        <div class="class-item">
+                            <input type="checkbox" id="class-{{ class_id }}" value="{{ class_name }}">
+                            <label for="class-{{ class_id }}">{{ class_name }}</label>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 添加SocketIO客户端库 -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        function getSelectedClasses() {
+            const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
+            const selected = [];
+            checkboxes.forEach(cb => {
+                if (cb.checked) {
+                    selected.push(cb.value);
+                }
+            });
+            return selected;
+        }
+        
+        // 实时检测相关变量
+        let isDetecting = false;
+        let videoElement = null;
+        let canvasElement = null;
+        let canvasContext = null;
+        let socket = null;
+        
+        // 为所有复选框添加事件监听器
+        document.addEventListener('DOMContentLoaded', function() {
+            // 为类别复选框添加事件监听器
+            const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                cb.addEventListener('change', handleClassChange);
+            });
+            
+            // 为全选复选框添加事件监听器
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.addEventListener('change', handleClassChange);
+            }
+            
+            // 初始化WebSocket连接
+            initWebSocket();
+        });
+        
+        // 初始化WebSocket连接
+        function initWebSocket() {
+            socket = io();
+            
+            // 监听检测结果
+            socket.on('detection_result', function(data) {
+                if (data.detections) {
+                    drawDetections(data.detections);
+                } else if (data.error) {
+                    console.error('检测错误:', data.error);
+                }
+            });
+            
+            // 监听连接事件
+            socket.on('connect', function() {
+                console.log('WebSocket连接已建立');
+            });
+            
+            // 监听断开连接事件
+            socket.on('disconnect', function() {
+                console.log('WebSocket连接已断开');
+            });
+        }
+        
+        // 处理类别选择变化
+        function handleClassChange() {
+            if (isDetecting) {
+                // 保存当前按钮文本状态
+                const detectBtn = document.getElementById('detect-btn');
+                const btnText = detectBtn.textContent;
+                
+                // 内部重置函数，不改变按钮状态
+                function internalReset() {
+                    // 停止检测但不改变按钮状态
+                    isDetecting = false;
+                    if (streamInterval) {
+                        clearInterval(streamInterval);
+                        streamInterval = null;
+                    }
+                    // 清空检测画布
+                    if (detectionContext && detectionCanvas) {
+                        detectionContext.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+                    }
+                }
+                
+                // 执行内部重置
+                internalReset();
+                
+                // 重新开始检测
+                detectObjects();
+                
+                // 恢复按钮文本状态
+                detectBtn.textContent = btnText;
+            }
+        }
+        let detectionCanvas = null;
+        let detectionContext = null;
+        let streamInterval = null;
+        
+        function initCanvas() {
+            videoElement = document.getElementById('original-video');
+            canvasElement = document.createElement('canvas');
+            canvasContext = canvasElement.getContext('2d');
+            detectionCanvas = document.getElementById('detection-canvas');
+            detectionContext = detectionCanvas.getContext('2d');
+            
+            // 设置canvas尺寸与视频一致
+            videoElement.addEventListener('loadedmetadata', function() {
+                canvasElement.width = videoElement.videoWidth;
+                canvasElement.height = videoElement.videoHeight;
+                detectionCanvas.width = videoElement.videoWidth;
+                detectionCanvas.height = videoElement.videoHeight;
+                // 视频元数据加载完成后更新Canvas显示尺寸
+                updateCanvasSize();
+            });
+            
+            // 监听视频加载完成事件，确保视频元素尺寸确定后更新Canvas
+            videoElement.addEventListener('loadeddata', updateCanvasSize);
+            
+            // 监听窗口大小变化，确保Canvas显示尺寸与视频一致
+            window.addEventListener('resize', updateCanvasSize);
+            
+            // 初始更新一次
+            updateCanvasSize();
+        }
+        
+        function updateCanvasSize() {
+            if (!videoElement || !detectionCanvas) return;
+            
+            const container = document.getElementById('video-container');
+            const videoRect = videoElement.getBoundingClientRect();
+            
+            // 设置Canvas的显示尺寸与视频元素的实际显示尺寸一致
+            detectionCanvas.style.width = videoRect.width + 'px';
+            detectionCanvas.style.height = videoRect.height + 'px';
+        }
+        
+        function detectObjects() {
+            const videoPath = "{{ request.args.get('video') }}";
+            const selectedClasses = getSelectedClasses();
+            
+            if (!videoPath) {
+                showStatus('请先上传视频', 'error');
+                return;
+            }
+            
+            if (selectedClasses.length === 0) {
+                showStatus('请至少选择一个要检测的物品', 'error');
+                return;
+            }
+            
+            if (!isDetecting) {
+                // 开始实时检测
+                isDetecting = true;
+                initCanvas();
+                showStatus('正在进行实时检测...', '');
+                document.getElementById('detect-btn').textContent = '停止检测';
+                
+                // 开始捕获视频帧并发送到服务器
+                streamInterval = setInterval(() => {
+                    if (!videoElement.paused && !videoElement.ended) {
+                        // 捕获当前视频帧
+                        canvasContext.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+                        
+                        // 将canvas转换为base64字符串
+                        const frameData = canvasElement.toDataURL('image/jpeg');
+                        
+                        try {
+                            // 通过WebSocket发送帧数据到服务器进行检测
+                            socket.emit('detect_frame', {
+                                frame_data: frameData.split(',')[1], // 移除base64前缀
+                                selected_classes: selectedClasses
+                            });
+                        } catch (error) {
+                            console.error('检测过程中发生错误:', error);
+                        }
+                    }
+                }, 100); // 每100毫秒发送一帧
+            } else {
+                // 停止实时检测
+                stopDetection();
+            }
+        }
+        
+        function stopDetection() {
+            isDetecting = false;
+            if (streamInterval) {
+                clearInterval(streamInterval);
+                streamInterval = null;
+            }
+            // 清空检测画布
+            if (detectionContext && detectionCanvas) {
+                detectionContext.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+            }
+            showStatus('请选择要检测的物品，然后点击"开始检测"按钮。', '');
+            document.getElementById('detect-btn').textContent = '开始检测';
+        }
+        
+        function resetVideo() {
+            stopDetection();
+            const processedVideo = document.getElementById('processed-video');
+            const originalVideo = document.getElementById('original-video');
+            
+            processedVideo.style.display = 'none';
+            originalVideo.style.display = 'block';
+            
+            showStatus('请选择要检测的物品，然后点击"开始检测"按钮。', '');
+        }
+        
+        function handleVideoClick(event) {
+            if (!videoElement) {
+                initCanvas();
+            }
+            
+            // 获取视频元素
+            const video = videoElement;
+            const container = document.getElementById('video-container');
+            
+            // 计算点击位置在视频实际尺寸中的坐标
+            const rect = container.getBoundingClientRect();
+            const scaleX = video.videoWidth / rect.width;
+            const scaleY = video.videoHeight / rect.height;
+            
+            const clickX = (event.clientX - rect.left) * scaleX;
+            const clickY = (event.clientY - rect.top) * scaleY;
+            
+            // 捕获当前视频帧
+            canvasContext.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+            
+            // 将canvas转换为base64字符串
+            const frameData = canvasElement.toDataURL('image/jpeg');
+            
+            // 发送到服务器进行检测
+            fetch('/detect_click', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    frame_data: frameData.split(',')[1], // 移除base64前缀
+                    click_x: clickX,
+                    click_y: clickY
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showStatus(data.error, 'error');
+                } else if (data.detected_class) {
+                    // 自动勾选识别到的类别
+                    const className = data.detected_class;
+                    const checkbox = document.querySelector(`.class-item input[type="checkbox"][value="${className}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                        showStatus(`已识别并勾选: ${className}`, 'success');
+                        // 触发类别变化处理，确保检测逻辑重新执行
+                        handleClassChange();
+                    } else {
+                        showStatus(`识别到: ${className}，但未找到对应选项`, '');
+                    }
+                } else {
+                    showStatus('未识别到物体', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('检测过程中发生错误:', error);
+                showStatus('检测过程中发生错误', 'error');
+            });
+        }
+        
+        function showStatus(message, type) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+        
+        function drawDetections(detections) {
+            // 清空画布
+            detectionContext.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
+            
+            // 绘制检测结果
+            detections.forEach(detection => {
+                const { x1, y1, x2, y2, class_name, confidence } = detection;
+                
+                // 绘制边界框
+                detectionContext.strokeStyle = '#00FF00';
+                detectionContext.lineWidth = 2;
+                detectionContext.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                
+                // 绘制标签背景
+                detectionContext.fillStyle = '#00FF00';
+                const label = `${class_name}: ${confidence.toFixed(2)}`;
+                const textWidth = detectionContext.measureText(label).width;
+                detectionContext.fillRect(x1, y1 - 20, textWidth + 10, 20);
+                
+                // 绘制标签文本
+                detectionContext.fillStyle = '#000000';
+                detectionContext.font = '14px Arial';
+                detectionContext.fillText(label, x1 + 5, y1 - 5);
+            });
+        }
+        
+        // 根据复选框状态切换全选/全部取消
+        function toggleSelectAll() {
+            const selectAllCheckbox = document.getElementById('select-all-checkbox');
+            const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAllCheckbox.checked;
+            });
+        }
+    </script>
+</body>
+</html>
