@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>视频实时标记系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -86,6 +87,9 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             flex: 1;
             min-width: 300px;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 140px);
         }
         
         video {
@@ -118,15 +122,25 @@
             cursor: not-allowed;
         }
         
+        .controls-section h3 {
+            flex-shrink: 0;
+        }
+        
+        .controls-section > div:not(.classes-grid) {
+            flex-shrink: 0;
+        }
+        
         .classes-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
             gap: 10px;
-            max-height: 400px;
+            flex: 1;
             overflow-y: auto;
             padding: 10px;
             border: 1px solid #eee;
             border-radius: 4px;
+            min-height: 200px;
+            align-content: start;
         }
         
         .class-item {
@@ -136,6 +150,7 @@
             padding: 8px;
             background-color: #f9f9f9;
             border-radius: 4px;
+            height: fit-content;
         }
         
         .class-item input[type="checkbox"] {
@@ -163,6 +178,63 @@
         .status.success {
             background-color: #e8f8e8;
             border-left-color: #27ae60;
+        }
+        
+        .timeline-section {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        
+        .timeline-container {
+            position: relative;
+            height: 200px;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .timeline-header h4 {
+            margin: 0;
+            color: #2c3e50;
+        }
+        
+        .timeline-info {
+            font-size: 12px;
+            color: #666;
+            padding: 5px 10px;
+            background: #f0f0f0;
+            border-radius: 3px;
+        }
+        
+        .timeline-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .timeline-controls select {
+            padding: 5px 10px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 12px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .timeline-controls label {
+            font-size: 12px;
+            color: #666;
         }
     </style>
 </head>
@@ -203,6 +275,25 @@
                     <div id="status" class="status">
                         请选择要检测的物品，然后点击"开始检测"按钮。
                     </div>
+                    
+                    <div class="timeline-section">
+                        <div class="timeline-header">
+                            <h4>物体检测时间轴</h4>
+                            <div class="timeline-controls">
+                                <label for="timeline-refresh-rate">刷新频率:</label>
+                                <select id="timeline-refresh-rate" onchange="updateTimelineRefreshRate()">
+                                    <option value="1">逐帧刷新</option>
+                                    <option value="2" selected>1/2帧率刷新</option>
+                                    <option value="4">1/4帧率刷新</option>
+                                    <option value="10">1/10帧率刷新</option>
+                                </select>
+                                <div class="timeline-info" id="timeline-info">时间: 00:00:00</div>
+                            </div>
+                        </div>
+                        <div class="timeline-container">
+                            <canvas id="timeline-chart"></canvas>
+                        </div>
+                    </div>
                 {% else %}
                     <div style="text-align: center; padding: 50px; color: #666;">
                         请先上传视频文件
@@ -239,6 +330,13 @@
     </div>
     
     <script>
+        // 时间轴相关变量
+        let timelineChart = null;
+        let detectionTimeline = {}; // 存储每个物体的检测时间段 {className: [{start, end}]}
+        let currentDetections = {}; // 当前正在检测的物体 {className: startTime}
+        let timelineRefreshRate = 2; // 时间轴刷新频率（每N帧刷新一次）
+        let frameCounter = 0; // 帧计数器
+        
         function getSelectedClasses() {
             const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
             const selected = [];
@@ -273,6 +371,9 @@
             
             // 初始化WebSocket连接
             initWebSocket();
+            
+            // 初始化时间轴
+            initTimeline();
         });
         
         // 初始化WebSocket连接
@@ -453,6 +554,12 @@
             processedVideo.style.display = 'none';
             originalVideo.style.display = 'block';
             
+            // 清空时间轴数据
+            detectionTimeline = {};
+            currentDetections = {};
+            frameCounter = 0;
+            updateTimeline();
+            
             showStatus('请选择要检测的物品，然后点击"开始检测"按钮。', '');
         }
         
@@ -528,9 +635,17 @@
             // 清空画布
             detectionContext.clearRect(0, 0, detectionCanvas.width, detectionCanvas.height);
             
+            // 获取当前视频时间
+            const currentTime = videoElement.currentTime;
+            
+            // 记录当前帧检测到的物体
+            const detectedClasses = new Set();
+            
             // 绘制检测结果
             detections.forEach(detection => {
                 const { x1, y1, x2, y2, class_name, confidence } = detection;
+                
+                detectedClasses.add(class_name);
                 
                 // 绘制边界框
                 detectionContext.strokeStyle = '#00FF00';
@@ -548,6 +663,15 @@
                 detectionContext.font = '14px Arial';
                 detectionContext.fillText(label, x1 + 5, y1 - 5);
             });
+            
+            // 增加帧计数器
+            frameCounter++;
+            
+            // 根据刷新频率更新时间轴数据
+            if (frameCounter >= timelineRefreshRate) {
+                updateDetectionTimeline(detectedClasses, currentTime);
+                frameCounter = 0;
+            }
         }
         
         // 根据复选框状态切换全选/全部取消
@@ -557,6 +681,289 @@
             checkboxes.forEach(cb => {
                 cb.checked = selectAllCheckbox.checked;
             });
+        }
+        
+        // 初始化时间轴
+        function initTimeline() {
+            const canvas = document.getElementById('timeline-chart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            
+            // 自定义插件：绘制跟随鼠标的垂直线
+            const verticalLinePlugin = {
+                id: 'verticalLine',
+                afterDraw: (chart) => {
+                    if (chart.tooltip._active && chart.tooltip._active.length) {
+                        const activePoint = chart.tooltip._active[0];
+                        const ctx = chart.ctx;
+                        const x = activePoint.element.x;
+                        const topY = chart.scales.y.top;
+                        const bottomY = chart.scales.y.bottom;
+                        
+                        // 绘制垂直线
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.moveTo(x, topY);
+                        ctx.lineTo(x, bottomY);
+                        ctx.lineWidth = 1;
+                        ctx.strokeStyle = '#666';
+                        ctx.setLineDash([5, 5]);
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+                }
+            };
+            
+            timelineChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: []
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            position: 'bottom',
+                            min: 0,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return formatTime(value);
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: '视频时间轴'
+                            }
+                        },
+                        y: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: '检测物体'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            enabled: true,
+                            callbacks: {
+                                title: function(context) {
+                                    return context[0].label;
+                                },
+                                label: function(context) {
+                                    const start = context.raw.x[0];
+                                    const end = context.raw.x[1];
+                                    return `时间段: ${formatTime(start)} - ${formatTime(end)}`;
+                                },
+                                afterLabel: function(context) {
+                                    const value = context.parsed.x;
+                                    return `当前位置: ${formatTime(value)}`;
+                                }
+                            }
+                        }
+                    },
+                    onClick: (event, activeElements) => {
+                        if (activeElements.length > 0 || event.x) {
+                            // 计算点击位置对应的时间
+                            const chart = timelineChart;
+                            const canvasPosition = Chart.helpers.getRelativePosition(event, chart);
+                            const dataX = chart.scales.x.getValueForPixel(canvasPosition.x);
+                            
+                            // 跳转视频到该时间
+                            if (videoElement && dataX >= 0) {
+                                videoElement.currentTime = dataX;
+                            }
+                        }
+                    },
+                    onHover: (event, activeElements) => {
+                        // 更新时间显示
+                        const chart = timelineChart;
+                        const canvasPosition = Chart.helpers.getRelativePosition(event, chart);
+                        const dataX = chart.scales.x.getValueForPixel(canvasPosition.x);
+                        
+                        if (dataX >= 0) {
+                            const timeInfo = document.getElementById('timeline-info');
+                            if (timeInfo) {
+                                timeInfo.textContent = `时间: ${formatTime(dataX)}`;
+                            }
+                        }
+                    }
+                },
+                plugins: [verticalLinePlugin]
+            });
+            
+            // 监听canvas的鼠标移动事件
+            canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // 触发图表更新以显示垂直线
+                timelineChart.update('none');
+            });
+        }
+        
+        // 格式化时间（秒转换为 时:分:秒）
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        }
+        
+        // 更新检测时间轴数据
+        function updateDetectionTimeline(detectedClasses, currentTime) {
+            let needsUpdate = false;
+            
+            // 处理新检测到的物体
+            detectedClasses.forEach(className => {
+                if (!currentDetections[className]) {
+                    // 物体首次出现，记录开始时间
+                    currentDetections[className] = currentTime;
+                    needsUpdate = true; // 新物体出现，需要更新图表
+                }
+            });
+            
+            // 处理消失的物体
+            Object.keys(currentDetections).forEach(className => {
+                if (!detectedClasses.has(className)) {
+                    // 物体消失，记录时间段
+                    const startTime = currentDetections[className];
+                    const endTime = currentTime;
+                    
+                    if (!detectionTimeline[className]) {
+                        detectionTimeline[className] = [];
+                    }
+                    
+                    // 合并相近的时间段（间隔小于0.5秒）
+                    const lastSegment = detectionTimeline[className][detectionTimeline[className].length - 1];
+                    if (lastSegment && startTime - lastSegment.end < 0.5) {
+                        lastSegment.end = endTime;
+                    } else {
+                        detectionTimeline[className].push({
+                            start: startTime,
+                            end: endTime
+                        });
+                    }
+                    
+                    delete currentDetections[className];
+                    needsUpdate = true; // 物体消失，需要更新图表
+                }
+            });
+            
+            // 如果有变化，更新时间轴显示
+            if (needsUpdate || Object.keys(currentDetections).length > 0) {
+                updateTimeline(currentTime);
+            }
+        }
+        
+        // 更新时间轴图表
+        function updateTimeline(currentTime) {
+            if (!timelineChart || !videoElement) return;
+            
+            const videoDuration = videoElement.duration || 100;
+            const now = currentTime !== undefined ? currentTime : videoElement.currentTime;
+            
+            // 更新x轴最大值为视频总时长
+            timelineChart.options.scales.x.max = videoDuration;
+            
+            // 准备数据集
+            const labels = new Set();
+            const datasets = [];
+            const colorMap = {}; // 保持颜色一致性
+            
+            // 收集所有物体类别（包括已完成和正在检测的）
+            let colorIndex = 0;
+            [...Object.keys(detectionTimeline), ...Object.keys(currentDetections)].forEach(className => {
+                if (!colorMap[className]) {
+                    const hue = (colorIndex * 137.5) % 360;
+                    colorMap[className] = `hsla(${hue}, 70%, 60%, 0.8)`;
+                    colorIndex++;
+                }
+            });
+            
+            // 1. 添加已完成的时间段
+            Object.keys(detectionTimeline).forEach((className) => {
+                const segments = detectionTimeline[className];
+                
+                if (segments.length > 0) {
+                    labels.add(className);
+                    
+                    // 为每个时间段创建数据点
+                    const data = segments.map(segment => ({
+                        x: [segment.start, segment.end],
+                        y: className
+                    }));
+                    
+                    datasets.push({
+                        label: className,
+                        data: data,
+                        backgroundColor: colorMap[className],
+                        borderColor: colorMap[className],
+                        borderWidth: 1,
+                        barThickness: 20
+                    });
+                }
+            });
+            
+            // 2. 添加正在检测中的物体（实时更新到当前时间）
+            Object.keys(currentDetections).forEach((className) => {
+                labels.add(className);
+                
+                const startTime = currentDetections[className];
+                
+                // 查找该物体是否已有数据集
+                let dataset = datasets.find(ds => ds.label === className);
+                
+                if (dataset) {
+                    // 已有数据集，添加当前正在检测的时间段
+                    dataset.data.push({
+                        x: [startTime, now],
+                        y: className
+                    });
+                } else {
+                    // 新物体，创建新数据集
+                    datasets.push({
+                        label: className,
+                        data: [{
+                            x: [startTime, now],
+                            y: className
+                        }],
+                        backgroundColor: colorMap[className],
+                        borderColor: colorMap[className],
+                        borderWidth: 1,
+                        barThickness: 20
+                    });
+                }
+            });
+            
+            // 更新图表数据
+            const labelsArray = Array.from(labels);
+            timelineChart.data.labels = labelsArray;
+            timelineChart.data.datasets = datasets;
+            
+            // 如果没有数据，隐藏y轴
+            timelineChart.options.scales.y.display = labelsArray.length > 0;
+            
+            // 使用 'none' 模式更新，禁用动画
+            timelineChart.update('none');
+        }
+        
+        // 更新时间轴刷新频率
+        function updateTimelineRefreshRate() {
+            const select = document.getElementById('timeline-refresh-rate');
+            timelineRefreshRate = parseInt(select.value);
+            frameCounter = 0; // 重置帧计数器
+            console.log(`时间轴刷新频率已更新为: 每${timelineRefreshRate}帧刷新一次`);
         }
     </script>
 </body>

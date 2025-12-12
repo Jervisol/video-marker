@@ -140,6 +140,7 @@ cython_debug/
 # custom
 .idea/
 .vscode/
+.kiro/
 static/
 bak/
 *.bak
