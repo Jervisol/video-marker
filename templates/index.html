@@ -179,11 +179,10 @@
         
         <div class="main-content">
             <div class="video-section">
-                {% if request.query_params.get('video') or video %}
-                    {% set video_filename = request.query_params.get('video') or video %}
+                {% if video %}
                     <div style="position: relative; display: inline-block; width: 100%;" id="video-container" onclick="handleVideoClick(event)">
                         <video id="original-video" controls style="width: 100%;" onclick="event.preventDefault();">
-                            <source src="/static/uploads/{{ video_filename }}" type="video/mp4">
+                            <source src="/static/uploads/{{ video }}" type="video/mp4">
                             您的浏览器不支持视频播放。
                         </video>
                         <canvas id="detection-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: auto; pointer-events: none;"></canvas>
@@ -381,10 +380,11 @@
         }
         
         function detectObjects() {
-            const videoFilename = '{{ request.query_params.get("video") or video }}';
             const selectedClasses = getSelectedClasses();
             
-            if (!videoFilename) {
+            // 检查视频元素是否存在
+            const videoElement = document.getElementById('original-video');
+            if (!videoElement) {
                 showStatus('请先上传视频', 'error');
                 return;
             }

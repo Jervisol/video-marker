@@ -131,13 +131,16 @@ def detect_with_model(frame: np.ndarray, selected_model: str, selected_classes: 
 # 页面路由
 @app.get('/')
 def index(request: Request):
+    # 获取查询参数中的video
+    video = request.query_params.get('video')
     # 只传递模型名称列表给模板，避免模板渲染时的序列化问题
     model_names = list(trained_models.keys())
     return templates.TemplateResponse('index.html', {
         'request': request,
         'classes': CLASSES,
         'trained_models': model_names,
-        'default_model': default_model
+        'default_model': default_model,
+        'video': video
     })
 
 # WebSocket路由
