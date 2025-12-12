@@ -179,10 +179,11 @@
         
         <div class="main-content">
             <div class="video-section">
-                {% if request.args.get('video') %}
+                {% if request.query_params.get('video') or video %}
+                    {% set video_filename = request.query_params.get('video') or video %}
                     <div style="position: relative; display: inline-block; width: 100%;" id="video-container" onclick="handleVideoClick(event)">
                         <video id="original-video" controls style="width: 100%;" onclick="event.preventDefault();">
-                            <source src="/static/uploads/{{ request.args.get('video') }}" type="video/mp4">
+                            <source src="/static/uploads/{{ video_filename }}" type="video/mp4">
                             您的浏览器不支持视频播放。
                         </video>
                         <canvas id="detection-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: auto; pointer-events: none;"></canvas>
@@ -238,9 +239,6 @@
         </div>
     </div>
     
-    <!-- 添加SocketIO客户端库 -->
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-    
     <script>
         function getSelectedClasses() {
             const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
@@ -280,26 +278,33 @@
         
         // 初始化WebSocket连接
         function initWebSocket() {
-            socket = io();
+            // 使用原生WebSocket连接FastAPI后端
+            socket = new WebSocket(`ws://${window.location.host}/ws`);
+            
+            // 监听连接打开事件
+            socket.onopen = function() {
+                console.log('WebSocket连接已建立');
+            };
             
             // 监听检测结果
-            socket.on('detection_result', function(data) {
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
                 if (data.detections) {
                     drawDetections(data.detections);
                 } else if (data.error) {
                     console.error('检测错误:', data.error);
                 }
-            });
+            };
             
-            // 监听连接事件
-            socket.on('connect', function() {
-                console.log('WebSocket连接已建立');
-            });
-            
-            // 监听断开连接事件
-            socket.on('disconnect', function() {
+            // 监听连接关闭事件
+            socket.onclose = function() {
                 console.log('WebSocket连接已断开');
-            });
+            };
+            
+            // 监听错误事件
+            socket.onerror = function(error) {
+                console.error('WebSocket错误:', error);
+            };
         }
         
         // 处理类别选择变化
@@ -376,10 +381,10 @@
         }
         
         function detectObjects() {
-            const videoPath = "{{ request.args.get('video') }}";
+            const videoFilename = '{{ request.query_params.get("video") or video }}';
             const selectedClasses = getSelectedClasses();
             
-            if (!videoPath) {
+            if (!videoFilename) {
                 showStatus('请先上传视频', 'error');
                 return;
             }
@@ -410,11 +415,11 @@
                         
                         try {
                             // 通过WebSocket发送帧数据到服务器进行检测
-                            socket.emit('detect_frame', {
+                            socket.send(JSON.stringify({
                                 frame_data: frameData.split(',')[1], // 移除base64前缀
                                 selected_classes: selectedClasses,
                                 selected_model: selectedModel
-                            });
+                            }));
                         } catch (error) {
                             console.error('检测过程中发生错误:', error);
                         }
@@ -483,7 +488,8 @@
                 body: JSON.stringify({
                     frame_data: frameData.split(',')[1], // 移除base64前缀
                     click_x: clickX,
-                    click_y: clickY
+                    click_y: clickY,
+                    selected_model: document.getElementById('model-select').value
                 })
             })
             .then(response => response.json())
