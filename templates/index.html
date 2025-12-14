@@ -122,6 +122,34 @@
             cursor: not-allowed;
         }
         
+        .video-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            color: #555;
+            font-size: 13px;
+        }
+        
+        .info-item span:last-child {
+            color: #2c3e50;
+            font-size: 13px;
+        }
+        
         .controls-section h3 {
             flex-shrink: 0;
         }
@@ -236,6 +264,191 @@
             font-size: 12px;
             color: #666;
         }
+        
+        /* Export功能样式 */
+        .export-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            flex-shrink: 0;
+        }
+        
+        .export-button {
+            width: 100%;
+            padding: 12px 20px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background-color 0.3s;
+        }
+        
+        .export-button:hover:not(:disabled) {
+            background-color: #2980b9;
+        }
+        
+        .export-button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        
+        .export-icon {
+            font-size: 20px;
+        }
+        
+        /* 进度弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            min-width: 400px;
+            max-width: 500px;
+        }
+        
+        .modal-content h3 {
+            margin: 0 0 20px 0;
+            color: #2c3e50;
+            text-align: center;
+        }
+        
+        .progress-container {
+            margin-bottom: 20px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background-color: #ecf0f1;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .progress-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .modal-actions button {
+            padding: 10px 30px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        
+        .cancel-button {
+            background-color: #e74c3c;
+            color: white;
+        }
+        
+        .cancel-button:hover {
+            background-color: #c0392b;
+        }
+        
+        .success-message {
+            color: #27ae60;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        
+        .error-message {
+            color: #e74c3c;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        
+        /* 导出设置弹窗样式 */
+        .export-settings {
+            margin-bottom: 20px;
+        }
+        
+        .setting-item {
+            margin-bottom: 15px;
+        }
+        
+        .setting-item label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .fps-select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .fps-select option:disabled {
+            color: #999;
+        }
+        
+        .filename-input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .modal-actions button.export-button {
+            background-color: #27ae60;
+            color: white;
+        }
+        
+        .modal-actions button.export-button:hover {
+            background-color: #229954;
+        }
     </style>
 </head>
 <body>
@@ -270,6 +483,25 @@
                     <div class="video-controls">
                         <button id="detect-btn" onclick="detectObjects()">开始检测</button>
                         <button id="reset-btn" onclick="resetVideo()">重置</button>
+                    </div>
+                    
+                    <div id="video-info" class="video-info">
+                        <div class="info-item">
+                            <span class="info-label">分辨率:</span>
+                            <span id="video-resolution">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">帧率:</span>
+                            <span id="video-fps">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">时长:</span>
+                            <span id="video-duration">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">总帧数:</span>
+                            <span id="video-frames">-</span>
+                        </div>
                     </div>
                     
                     <div id="status" class="status">
@@ -325,6 +557,63 @@
                         </div>
                     {% endfor %}
                 </div>
+                
+                {% if video %}
+                <div class="export-section">
+                    <button id="export-btn" class="export-button" onclick="initiateExport()">
+                        <span class="export-icon">📥</span>
+                        导出标注视频
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- 导出设置弹窗 -->
+    <div id="export-settings-modal" class="modal">
+        <div class="modal-content">
+            <h3>导出设置</h3>
+            <div class="export-settings">
+                <div class="setting-item">
+                    <label for="output-fps">输出帧率:</label>
+                    <select id="output-fps" class="fps-select">
+                        <option value="original">原始帧率</option>
+                        <option value="60">60 fps</option>
+                        <option value="30">30 fps</option>
+                        <option value="24">24 fps</option>
+                        <option value="15">15 fps</option>
+                        <option value="10">10 fps</option>
+                    </select>
+                </div>
+                <div class="setting-item">
+                    <label for="output-filename">文件名:</label>
+                    <input type="text" id="output-filename" class="filename-input" placeholder="annotated_video.mp4">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="cancel-button" onclick="hideExportSettingsModal()">取消</button>
+                <button class="export-button" onclick="confirmExport()">开始导出</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 导出进度弹窗 -->
+    <div id="export-modal" class="modal">
+        <div class="modal-content">
+            <h3>导出进度</h3>
+            <div id="export-message"></div>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progress-percentage">0%</span>
+                    <span id="progress-frames">0 / 0 帧</span>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="cancel-export-btn" class="cancel-button" onclick="cancelExport()">取消</button>
             </div>
         </div>
     </div>
@@ -336,6 +625,12 @@
         let currentDetections = {}; // 当前正在检测的物体 {className: startTime}
         let timelineRefreshRate = 2; // 时间轴刷新频率（每N帧刷新一次）
         let frameCounter = 0; // 帧计数器
+        
+        // 导出相关变量
+        let isExporting = false;
+        let currentExportTaskId = null;
+        let exportProgressInterval = null;
+        let currentVideoFps = 30; // 当前视频帧率，默认30
         
         function getSelectedClasses() {
             const checkboxes = document.querySelectorAll('.class-item input[type="checkbox"]');
@@ -374,6 +669,9 @@
             
             // 初始化时间轴
             initTimeline();
+            
+            // 初始化视频信息显示
+            initVideoInfo();
         });
         
         // 初始化WebSocket连接
@@ -964,6 +1262,358 @@
             timelineRefreshRate = parseInt(select.value);
             frameCounter = 0; // 重置帧计数器
             console.log(`时间轴刷新频率已更新为: 每${timelineRefreshRate}帧刷新一次`);
+        }
+        
+        // ==================== 视频信息显示 ====================
+        
+        // 初始化视频信息显示
+        function initVideoInfo() {
+            const videoElement = document.getElementById('original-video');
+            if (!videoElement) return;
+            
+            // 监听视频元数据加载完成
+            videoElement.addEventListener('loadedmetadata', function() {
+                updateVideoInfo();
+            });
+            
+            // 如果已经加载，立即更新
+            if (videoElement.readyState >= 1) {
+                updateVideoInfo();
+            }
+        }
+        
+        // 更新视频信息显示
+        function updateVideoInfo() {
+            const videoElement = document.getElementById('original-video');
+            if (!videoElement) return;
+            
+            const width = videoElement.videoWidth;
+            const height = videoElement.videoHeight;
+            const duration = videoElement.duration;
+            
+            // 获取帧率（通过后端API或估算）
+            // 注意：HTML5 video API不直接提供帧率，这里使用估算值
+            // 实际项目中应该从后端获取准确的帧率
+            fetchVideoMetadata();
+            
+            // 更新显示
+            document.getElementById('video-resolution').textContent = `${width} × ${height}`;
+            document.getElementById('video-duration').textContent = formatTime(duration);
+        }
+        
+        // 从后端获取视频元数据
+        async function fetchVideoMetadata() {
+            const videoElement = document.getElementById('original-video');
+            const videoSource = videoElement.querySelector('source');
+            if (!videoSource || !videoSource.src) return;
+            
+            const videoFilename = decodeURIComponent(videoSource.src.split('/').pop());
+            
+            try {
+                const response = await fetch('/video/metadata', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_filename: videoFilename
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    currentVideoFps = data.fps || 30;
+                    const totalFrames = data.total_frames || Math.round(videoElement.duration * currentVideoFps);
+                    
+                    document.getElementById('video-fps').textContent = `${currentVideoFps.toFixed(2)} fps`;
+                    document.getElementById('video-frames').textContent = totalFrames.toLocaleString();
+                    
+                    // 更新帧率选择器
+                    updateFpsOptions();
+                }
+            } catch (error) {
+                console.error('获取视频元数据失败:', error);
+                // 使用默认值
+                document.getElementById('video-fps').textContent = '30.00 fps (估算)';
+                document.getElementById('video-frames').textContent = Math.round(videoElement.duration * 30).toLocaleString();
+            }
+        }
+        
+        // ==================== 导出功能 ====================
+        
+        // 更新帧率选项（禁用高于当前视频帧率的选项）
+        function updateFpsOptions() {
+            const fpsSelect = document.getElementById('output-fps');
+            if (!fpsSelect) return;
+            
+            const options = fpsSelect.querySelectorAll('option');
+            options.forEach(option => {
+                const value = option.value;
+                if (value !== 'original') {
+                    const fps = parseInt(value);
+                    if (fps > currentVideoFps) {
+                        option.disabled = true;
+                        option.textContent = `${fps} fps (高于原始帧率)`;
+                    } else {
+                        option.disabled = false;
+                        option.textContent = `${fps} fps`;
+                    }
+                }
+            });
+        }
+        
+        // 启动导出流程
+        async function initiateExport() {
+            // 验证：检查是否选择了类别
+            const selectedClasses = getSelectedClasses();
+            if (selectedClasses.length === 0) {
+                alert('请至少选择一个要检测的物品类别');
+                return;
+            }
+            
+            // 验证：检查视频是否加载
+            const videoElement = document.getElementById('original-video');
+            if (!videoElement) {
+                alert('请先上传视频');
+                return;
+            }
+            
+            // 获取视频源
+            const videoSource = videoElement.querySelector('source');
+            if (!videoSource || !videoSource.src) {
+                alert('请先上传视频');
+                return;
+            }
+            
+            // 生成默认输出文件名
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+            const defaultFilename = `annotated_${timestamp}.mp4`;
+            
+            // 设置默认文件名
+            document.getElementById('output-filename').value = defaultFilename;
+            
+            // 更新帧率选项
+            updateFpsOptions();
+            
+            // 显示导出设置弹窗
+            showExportSettingsModal();
+        }
+        
+        // 显示导出设置弹窗
+        function showExportSettingsModal() {
+            const modal = document.getElementById('export-settings-modal');
+            modal.classList.add('show');
+        }
+        
+        // 隐藏导出设置弹窗
+        function hideExportSettingsModal() {
+            const modal = document.getElementById('export-settings-modal');
+            modal.classList.remove('show');
+        }
+        
+        // 确认导出（从设置弹窗）
+        async function confirmExport() {
+            // 获取设置
+            const outputFilename = document.getElementById('output-filename').value.trim();
+            if (!outputFilename) {
+                alert('请输入文件名');
+                return;
+            }
+            
+            // 确保文件名以.mp4结尾
+            const finalFilename = outputFilename.endsWith('.mp4') ? outputFilename : outputFilename + '.mp4';
+            
+            // 获取帧率设置
+            const fpsSelect = document.getElementById('output-fps');
+            const selectedFps = fpsSelect.value;
+            
+            // 隐藏设置弹窗
+            hideExportSettingsModal();
+            
+            // 获取视频信息
+            const videoElement = document.getElementById('original-video');
+            const videoSource = videoElement.querySelector('source');
+            const videoSrc = videoSource.src;
+            const videoFilename = decodeURIComponent(videoSrc.split('/').pop());
+            
+            // 获取选择的类别和模型
+            const selectedClasses = getSelectedClasses();
+            const selectedModel = document.getElementById('model-select').value;
+            
+            // 禁用导出按钮
+            const exportBtn = document.getElementById('export-btn');
+            exportBtn.disabled = true;
+            isExporting = true;
+            
+            try {
+                // 发送导出请求
+                const response = await fetch('/export/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        video_filename: videoFilename,
+                        selected_classes: selectedClasses,
+                        selected_model: selectedModel,
+                        output_filename: finalFilename,
+                        output_fps: selectedFps === 'original' ? null : parseInt(selectedFps)
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '导出请求失败');
+                }
+                
+                const data = await response.json();
+                currentExportTaskId = data.task_id;
+                
+                // 显示进度弹窗
+                showProgressModal();
+                
+                // 开始轮询进度
+                startProgressPolling();
+                
+            } catch (error) {
+                console.error('导出错误:', error);
+                alert(`导出失败: ${error.message}`);
+                exportBtn.disabled = false;
+                isExporting = false;
+            }
+        }
+        
+        // 显示进度弹窗
+        function showProgressModal() {
+            const modal = document.getElementById('export-modal');
+            modal.classList.add('show');
+            
+            // 重置进度显示
+            document.getElementById('progress-fill').style.width = '0%';
+            document.getElementById('progress-percentage').textContent = '0%';
+            document.getElementById('progress-frames').textContent = '0 / 0 帧';
+            document.getElementById('export-message').innerHTML = '';
+            
+            // 显示取消按钮
+            document.getElementById('cancel-export-btn').style.display = 'block';
+        }
+        
+        // 隐藏进度弹窗
+        function hideProgressModal() {
+            const modal = document.getElementById('export-modal');
+            modal.classList.remove('show');
+        }
+        
+        // 开始轮询进度
+        function startProgressPolling() {
+            exportProgressInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/export/progress/${currentExportTaskId}`);
+                    
+                    if (!response.ok) {
+                        throw new Error('获取进度失败');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // 更新进度显示
+                    updateProgress(data.processed_frames, data.total_frames, data.progress_percentage);
+                    
+                    // 检查状态
+                    if (data.status === 'completed') {
+                        stopProgressPolling();
+                        showSuccess();
+                    } else if (data.status === 'failed') {
+                        stopProgressPolling();
+                        showError(data.error_message || '导出失败');
+                    } else if (data.status === 'cancelled') {
+                        stopProgressPolling();
+                        showError('导出已取消');
+                    }
+                    
+                } catch (error) {
+                    console.error('轮询进度错误:', error);
+                }
+            }, 500); // 每500ms轮询一次
+        }
+        
+        // 停止轮询进度
+        function stopProgressPolling() {
+            if (exportProgressInterval) {
+                clearInterval(exportProgressInterval);
+                exportProgressInterval = null;
+            }
+        }
+        
+        // 更新进度显示
+        function updateProgress(processedFrames, totalFrames, percentage) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressPercentage = document.getElementById('progress-percentage');
+            const progressFrames = document.getElementById('progress-frames');
+            
+            progressFill.style.width = percentage + '%';
+            progressPercentage.textContent = Math.round(percentage) + '%';
+            progressFrames.textContent = `${processedFrames} / ${totalFrames} 帧`;
+        }
+        
+        // 显示成功消息
+        function showSuccess() {
+            const messageDiv = document.getElementById('export-message');
+            messageDiv.innerHTML = '<div class="success-message">✅ 导出成功！</div>';
+            
+            // 隐藏取消按钮
+            document.getElementById('cancel-export-btn').style.display = 'none';
+            
+            // 3秒后自动关闭
+            setTimeout(() => {
+                hideProgressModal();
+                resetExportState();
+            }, 3000);
+        }
+        
+        // 显示错误消息
+        function showError(message) {
+            const messageDiv = document.getElementById('export-message');
+            messageDiv.innerHTML = `<div class="error-message">❌ ${message}</div>`;
+            
+            // 隐藏取消按钮
+            document.getElementById('cancel-export-btn').style.display = 'none';
+            
+            // 3秒后自动关闭
+            setTimeout(() => {
+                hideProgressModal();
+                resetExportState();
+            }, 3000);
+        }
+        
+        // 取消导出
+        async function cancelExport() {
+            if (!currentExportTaskId) return;
+            
+            try {
+                const response = await fetch(`/export/cancel/${currentExportTaskId}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    stopProgressPolling();
+                    showError('导出已取消');
+                }
+            } catch (error) {
+                console.error('取消导出错误:', error);
+            }
+        }
+        
+        // 重置导出状态
+        function resetExportState() {
+            isExporting = false;
+            currentExportTaskId = null;
+            
+            // 重新启用导出按钮
+            const exportBtn = document.getElementById('export-btn');
+            if (exportBtn) {
+                exportBtn.disabled = false;
+            }
         }
     </script>
 </body>

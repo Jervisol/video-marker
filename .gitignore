@@ -157,3 +157,4 @@ radar.duckdb
 radar.duckdb.wal
 .specstory/
 *.pt
+docs/
