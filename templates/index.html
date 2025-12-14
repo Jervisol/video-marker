@@ -218,11 +218,13 @@
         
         .timeline-container {
             position: relative;
-            height: 200px;
+            min-height: 200px;
+            max-height: 600px;
             background: white;
             border: 1px solid #ddd;
             border-radius: 4px;
             overflow: hidden;
+            transition: height 0.3s ease;
         }
         
         .timeline-header {
@@ -453,7 +455,12 @@
 </head>
 <body>
     <div class="container">
-        <h1>视频实时标记系统Demo</h1>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h1 style="margin-bottom: 0;">视频实时标记系统Demo</h1>
+            <a href="/training" style="padding: 12px 24px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4); transition: transform 0.2s, box-shadow 0.2s;">
+                🎯 模型训练
+            </a>
+        </div>
         
         <div class="upload-section">
             <form class="upload-form" action="/upload" method="post" enctype="multipart/form-data">
@@ -1252,8 +1259,53 @@
             // 如果没有数据，隐藏y轴
             timelineChart.options.scales.y.display = labelsArray.length > 0;
             
+            // 自动调整时间轴高度和条形粗细
+            adjustTimelineHeight(labelsArray.length);
+            
             // 使用 'none' 模式更新，禁用动画
             timelineChart.update('none');
+        }
+        
+        // 自动调整时间轴高度和条形粗细
+        function adjustTimelineHeight(itemCount) {
+            if (itemCount === 0) return;
+            
+            const container = document.getElementById('timeline-chart').parentElement;
+            const minHeight = 200;
+            const maxHeight = 600;
+            const barHeight = 20; // 每个条形的基础高度
+            const padding = 60; // 图表的上下padding
+            
+            // 计算需要的高度
+            const requiredHeight = itemCount * (barHeight + 10) + padding; // 10是间距
+            
+            // 确定实际高度
+            let actualHeight = Math.max(minHeight, Math.min(maxHeight, requiredHeight));
+            
+            // 如果物品太多，需要缩放
+            if (requiredHeight > maxHeight) {
+                // 计算缩放后的条形粗细
+                const availableHeight = maxHeight - padding;
+                const scaledBarHeight = Math.floor(availableHeight / itemCount) - 10;
+                const finalBarHeight = Math.max(8, scaledBarHeight); // 最小8px
+                
+                // 更新所有数据集的barThickness
+                timelineChart.data.datasets.forEach(dataset => {
+                    dataset.barThickness = finalBarHeight;
+                });
+                
+                actualHeight = maxHeight;
+                
+                console.log(`时间轴自动缩放: ${itemCount}个物品, 条形高度: ${finalBarHeight}px`);
+            } else {
+                // 恢复默认条形粗细
+                timelineChart.data.datasets.forEach(dataset => {
+                    dataset.barThickness = barHeight;
+                });
+            }
+            
+            // 设置容器高度
+            container.style.height = actualHeight + 'px';
         }
         
         // 更新时间轴刷新频率

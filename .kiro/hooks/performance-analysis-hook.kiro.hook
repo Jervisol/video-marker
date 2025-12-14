@@ -1,0 +1,19 @@
+{
+  "enabled": true,
+  "name": "Performance Analysis",
+  "description": "Analyzes the codebase for performance issues and optimization opportunities following development standards. Checks for anti-patterns, memory leaks, slow operations, database query optimizations, caching opportunities, bundle size, unused code, and suggests performance monitoring tools while following language-specific best practices.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "app.py",
+      "config.py",
+      "templates/index.html",
+      "requirements.txt"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the modified code for performance issues and optimization opportunities. Please:\n\n1. **Performance Anti-patterns**: Look for N+1 queries, inefficient loops, redundant operations, blocking I/O in async functions, and unnecessary data processing\n2. **Memory Management**: Check for memory leaks, excessive memory usage, large object retention, and improper resource cleanup\n3. **Blocking Operations**: Identify synchronous operations that should be async, CPU-intensive tasks not using thread pools, and blocking file I/O\n4. **Database/Query Optimization**: Suggest query optimizations, proper indexing, connection pooling, and batch operations (if applicable)\n5. **Caching Opportunities**: Identify repeated computations, static data that can be cached, and suggest caching strategies (in-memory, Redis, etc.)\n6. **Bundle Size**: Check for large dependencies, unused imports, and suggest ways to reduce payload size\n7. **Unused Code**: Identify dead code, unused functions/variables, and redundant logic that can be removed\n8. **Performance Monitoring**: Suggest tools like Prometheus, New Relic, or built-in profiling if not already in use\n9. **Language-Specific Best Practices**: \n   - Python: Use generators, list comprehensions, proper async/await, avoid global state\n   - JavaScript: Debouncing, throttling, lazy loading, code splitting\n   - FastAPI: Proper dependency injection, background tasks, streaming responses\n10. **Code Quality**: Ensure functions are small and focused on single responsibilities\n11. **Error Handling**: Implement proper error handling, logging with appropriate levels, and graceful degradation\n\nFor this FastAPI + YOLO video detection application, pay special attention to:\n- Video processing efficiency (frame skipping, resolution optimization)\n- Model inference optimization (batch processing, GPU utilization)\n- WebSocket connection management and memory usage\n- Thread pool sizing and task queue management\n- Static file serving and caching headers\n- Export task memory management and cleanup\n\nProvide specific, actionable recommendations with code examples where appropriate."
+  }
+}

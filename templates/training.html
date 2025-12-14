@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YOLO模型训练 - LoRA微调</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background-color: #f5f5f5; color: #333; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; margin-bottom: 20px; color: #2c3e50; }
+        .nav-link { display: inline-block; margin-bottom: 20px; padding: 10px 20px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; }
+        .nav-link:hover { background: #2980b9; }
+        
+        .main-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section h3 { margin-bottom: 15px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        
+        .video-container { position: relative; width: 100%; background: #000; border-radius: 4px; overflow: hidden; }
+        video { width: 100%; display: block; }
+        .video-controls { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .video-controls button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #229954; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-secondary { background: #95a5a6; color: white; }
+        .btn-secondary:hover { background: #7f8c8d; }
+        button:disabled { background: #bdc3c7; cursor: not-allowed; }
+        
+        .annotation-canvas-container { position: relative; border: 2px dashed #ddd; border-radius: 4px; min-height: 300px; display: flex; align-items: center; justify-content: center; background: #fafafa; }
+        .annotation-canvas-container.has-image { border-style: solid; border-color: #3498db; }
+        #annotation-canvas { max-width: 100%; cursor: crosshair; }
+        .placeholder-text { color: #999; font-size: 16px; }
+        
+        .class-input { display: flex; gap: 10px; margin-top: 10px; align-items: center; }
+        .class-input input { flex: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .class-input select { padding: 8px; border: 1px solid #ddd; border-radius: 4px; min-width: 150px; }
+        
+        .box-list { max-height: 150px; overflow-y: auto; margin-top: 10px; }
+        .box-item { display: flex; justify-content: space-between; align-items: center; padding: 8px; background: #f9f9f9; border-radius: 4px; margin-bottom: 5px; }
+        .box-item .delete-box { color: #e74c3c; cursor: pointer; padding: 2px 8px; }
+        
+        .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; max-height: 400px; overflow-y: auto; }
+        .gallery-item { position: relative; border: 2px solid transparent; border-radius: 4px; overflow: hidden; cursor: pointer; }
+        .gallery-item:hover { border-color: #3498db; }
+        .gallery-item.selected { border-color: #27ae60; }
+        .gallery-item img { width: 100%; height: 100px; object-fit: cover; }
+        .gallery-item .info { padding: 5px; font-size: 12px; background: #f9f9f9; }
+        .gallery-item .delete-btn { position: absolute; top: 5px; right: 5px; background: rgba(231,76,60,0.9); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; display: none; }
+        .gallery-item:hover .delete-btn { display: block; }
+        .gallery-item input[type="checkbox"] { position: absolute; top: 5px; left: 5px; transform: scale(1.3); }
+        
+        .empty-state { text-align: center; padding: 40px; color: #999; }
+</style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="nav-link">← 返回检测页面</a>
+        <h1>YOLO模型训练 - LoRA微调</h1>
+        
+        <div class="main-layout">
+            <!-- Left Column: Video and Annotation -->
+            <div class="left-column">
+                <div class="section">
+                    <h3>1. 视频播放与截图</h3>
+                    <div class="upload-area">
+                        <input type="file" id="video-input" accept="video/*" style="margin-bottom: 10px;">
+                        <select id="video-select" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100%;">
+                            <option value="">-- 或选择已上传的视频 --</option>
+                        </select>
+                    </div>
+                    <div class="video-container" style="margin-top: 10px;">
+                        <video id="video-player" controls></video>
+                    </div>
+                    <div class="video-controls">
+                        <button id="capture-btn" class="btn-primary" disabled>📷 截取当前帧</button>
+                        <span id="video-time" style="line-height: 36px; color: #666;">00:00:00 / 00:00:00</span>
+                    </div>
+                </div>
+                
+                <div class="section" style="margin-top: 20px;">
+                    <h3>2. 标注截图</h3>
+                    <div class="annotation-canvas-container" id="canvas-container">
+                        <span class="placeholder-text" id="canvas-placeholder">请先截取视频帧</span>
+                        <canvas id="annotation-canvas" style="display: none;"></canvas>
+                    </div>
+                    <div class="class-input">
+                        <input type="text" id="class-name-input" placeholder="输入类别名称" list="class-suggestions">
+                        <datalist id="class-suggestions"></datalist>
+                        <button id="add-box-btn" class="btn-secondary" disabled>添加标注框</button>
+                    </div>
+                    <div class="box-list" id="box-list"></div>
+                    <div class="video-controls" style="margin-top: 10px;">
+                        <button id="save-annotation-btn" class="btn-success" disabled>💾 保存标注</button>
+                        <button id="clear-annotation-btn" class="btn-danger">🗑️ 清除</button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Column: Gallery and Training -->
+            <div class="right-column">
+                <div class="section">
+                    <h3>3. 标注图片库</h3>
+                    <div class="video-controls" style="margin-bottom: 10px;">
+                        <button id="select-all-btn" class="btn-secondary">全选</button>
+                        <button id="deselect-all-btn" class="btn-secondary">取消全选</button>
+                        <button id="refresh-gallery-btn" class="btn-primary">🔄 刷新</button>
+                        <span id="selected-count" style="line-height: 36px; margin-left: auto;">已选: 0</span>
+                    </div>
+                    <div class="gallery-grid" id="annotation-gallery">
+                        <div class="empty-state">暂无标注图片</div>
+                    </div>
+                </div>
+
+                <div class="section" style="margin-top: 20px;">
+                    <h3>4. 生成训练集</h3>
+                    <div class="form-group">
+                        <label>数据集名称:</label>
+                        <input type="text" id="dataset-name" placeholder="my_dataset" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-top: 5px;">
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px;">
+                        <div>
+                            <label>训练集比例:</label>
+                            <input type="number" id="train-ratio" value="0.7" min="0" max="1" step="0.1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label>验证集比例:</label>
+                            <input type="number" id="val-ratio" value="0.2" min="0" max="1" step="0.1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label>测试集比例:</label>
+                            <input type="number" id="test-ratio" value="0.1" min="0" max="1" step="0.1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <button id="generate-dataset-btn" class="btn-success" style="width: 100%; margin-top: 15px;" disabled>📦 生成训练集</button>
+                    <div id="dataset-status" style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; display: none;"></div>
+                </div>
+                
+                <div class="section" style="margin-top: 20px;">
+                    <h3>5. 模型训练</h3>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label>基础模型:</label>
+                            <select id="base-model" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                {% for model_name in trained_models %}
+                                <option value="{{ model_name }}">{{ model_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label>数据集:</label>
+                            <select id="dataset-select" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">-- 选择数据集 --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label>训练轮数:</label>
+                            <input type="number" id="epochs" value="50" min="1" max="1000" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label>批次大小:</label>
+                            <input type="number" id="batch-size" value="16" min="1" max="128" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label>学习率:</label>
+                            <input type="number" id="learning-rate" value="0.001" min="0.0001" max="1" step="0.0001" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label>图像尺寸:</label>
+                            <input type="number" id="image-size" value="640" min="320" max="1280" step="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                        </div>
+                    </div>
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #3498db;">LoRA参数设置</summary>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px;">
+                            <div>
+                                <label>LoRA Rank:</label>
+                                <input type="number" id="lora-rank" value="8" min="1" max="64" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>LoRA Alpha:</label>
+                                <input type="number" id="lora-alpha" value="16" min="1" max="128" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div>
+                                <label>LoRA Dropout:</label>
+                                <input type="number" id="lora-dropout" value="0.1" min="0" max="1" step="0.1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                        </div>
+                    </details>
+                    <button id="start-training-btn" class="btn-success" style="width: 100%; margin-top: 15px;">🚀 开始训练</button>
+                </div>
+                
+                <div class="section" style="margin-top: 20px;">
+                    <h3>6. 训练进度 & 模型下载</h3>
+                    <div id="training-progress" style="display: none;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <span id="progress-status">状态: 等待中</span>
+                            <span id="progress-eta">预计剩余: --</span>
+                        </div>
+                        <div style="background: #ecf0f1; border-radius: 10px; height: 20px; overflow: hidden;">
+                            <div id="progress-bar" style="background: linear-gradient(90deg, #3498db, #27ae60); height: 100%; width: 0%; transition: width 0.3s;"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 12px; color: #666;">
+                            <span id="progress-epoch">Epoch: 0/0</span>
+                            <span id="progress-loss">Loss: --</span>
+                            <span id="progress-map">mAP: --</span>
+                        </div>
+                        <button id="cancel-training-btn" class="btn-danger" style="width: 100%; margin-top: 10px;">取消训练</button>
+                    </div>
+                    <div id="trained-models">
+                        <div class="empty-state">暂无已训练模型</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State variables
+        let currentVideoFilename = '';
+        let capturedFrame = null;
+        let boundingBoxes = [];
+        let isDrawing = false;
+        let startX, startY;
+        let selectedAnnotations = new Set();
+        let currentTrainingTaskId = null;
+        let progressInterval = null;
+        let usedClassNames = [];
+        
+        const video = document.getElementById('video-player');
+        const canvas = document.getElementById('annotation-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadUploadedVideos();
+            loadAnnotations();
+            loadDatasets();
+            loadTrainedModels();
+            setupEventListeners();
+        });
+        
+        function setupEventListeners() {
+            // Video events
+            document.getElementById('video-input').addEventListener('change', handleVideoUpload);
+            document.getElementById('video-select').addEventListener('change', handleVideoSelect);
+            video.addEventListener('loadedmetadata', () => updateVideoTime());
+            video.addEventListener('timeupdate', () => updateVideoTime());
+            video.addEventListener('pause', () => document.getElementById('capture-btn').disabled = false);
+            video.addEventListener('play', () => document.getElementById('capture-btn').disabled = true);
+            
+            // Capture and annotation
+            document.getElementById('capture-btn').addEventListener('click', captureFrame);
+            document.getElementById('save-annotation-btn').addEventListener('click', saveAnnotation);
+            document.getElementById('clear-annotation-btn').addEventListener('click', clearAnnotation);
+            
+            // Canvas drawing
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', endDrawing);
+            canvas.addEventListener('mouseleave', endDrawing);
+            
+            // Gallery
+            document.getElementById('select-all-btn').addEventListener('click', selectAllAnnotations);
+            document.getElementById('deselect-all-btn').addEventListener('click', deselectAllAnnotations);
+            document.getElementById('refresh-gallery-btn').addEventListener('click', loadAnnotations);
+            
+            // Dataset
+            document.getElementById('generate-dataset-btn').addEventListener('click', generateDataset);
+            
+            // Training
+            document.getElementById('start-training-btn').addEventListener('click', startTraining);
+            document.getElementById('cancel-training-btn').addEventListener('click', cancelTraining);
+        }
+        
+        async function loadUploadedVideos() {
+            // Load from static/uploads
+            const select = document.getElementById('video-select');
+            try {
+                const response = await fetch('/static/uploads/');
+                // Since we can't list directory, we'll rely on user upload or URL param
+                const urlParams = new URLSearchParams(window.location.search);
+                const videoParam = urlParams.get('video');
+                if (videoParam) {
+                    const option = document.createElement('option');
+                    option.value = videoParam;
+                    option.textContent = videoParam;
+                    select.appendChild(option);
+                    select.value = videoParam;
+                    handleVideoSelect();
+                }
+            } catch (e) {
+                console.log('Could not load video list');
+            }
+        }
+        
+        function handleVideoUpload(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file);
+                video.src = url;
+                currentVideoFilename = file.name;
+                video.load();
+            }
+        }
+        
+        function handleVideoSelect() {
+            const select = document.getElementById('video-select');
+            if (select.value) {
+                currentVideoFilename = select.value;
+                video.src = `/static/uploads/${select.value}`;
+                video.load();
+            }
+        }
+        
+        function updateVideoTime() {
+            const current = formatTime(video.currentTime);
+            const duration = formatTime(video.duration || 0);
+            document.getElementById('video-time').textContent = `${current} / ${duration}`;
+        }
+        
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = Math.floor(seconds % 60);
+            return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+        
+        async function captureFrame() {
+            if (!currentVideoFilename) {
+                alert('请先选择或上传视频');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/training/capture_frame', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_filename: currentVideoFilename,
+                        timestamp: video.currentTime
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    capturedFrame = {
+                        imageData: data.image_data,
+                        width: data.width,
+                        height: data.height,
+                        frameNumber: data.frame_number,
+                        timestamp: video.currentTime
+                    };
+                    
+                    displayCapturedFrame();
+                    boundingBoxes = [];
+                    updateBoxList();
+                    document.getElementById('save-annotation-btn').disabled = false;
+                } else {
+                    alert('截图失败: ' + data.error);
+                }
+            } catch (e) {
+                alert('截图失败: ' + e.message);
+            }
+        }
+        
+        function displayCapturedFrame() {
+            const container = document.getElementById('canvas-container');
+            const placeholder = document.getElementById('canvas-placeholder');
+            
+            placeholder.style.display = 'none';
+            canvas.style.display = 'block';
+            container.classList.add('has-image');
+            
+            const img = new Image();
+            img.onload = () => {
+                // Scale canvas to fit container while maintaining aspect ratio
+                const maxWidth = container.clientWidth - 4;
+                const scale = Math.min(1, maxWidth / img.width);
+                
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                capturedFrame.scale = scale;
+            };
+            img.src = 'data:image/jpeg;base64,' + capturedFrame.imageData;
+        }
+        
+        function startDrawing(e) {
+            if (!capturedFrame) return;
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            redrawCanvas();
+            
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+        }
+        
+        function endDrawing(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            
+            const className = document.getElementById('class-name-input').value.trim();
+            if (!className) {
+                alert('请先输入类别名称');
+                redrawCanvas();
+                return;
+            }
+            
+            // Convert to original image coordinates
+            const scale = capturedFrame.scale || 1;
+            const box = {
+                x1: Math.round(Math.min(startX, endX) / scale),
+                y1: Math.round(Math.min(startY, endY) / scale),
+                x2: Math.round(Math.max(startX, endX) / scale),
+                y2: Math.round(Math.max(startY, endY) / scale),
+                class_name: className,
+                class_id: usedClassNames.indexOf(className) >= 0 ? usedClassNames.indexOf(className) : usedClassNames.length
+            };
+            
+            if (box.x2 - box.x1 > 10 && box.y2 - box.y1 > 10) {
+                boundingBoxes.push(box);
+                if (!usedClassNames.includes(className)) {
+                    usedClassNames.push(className);
+                    updateClassSuggestions();
+                }
+                updateBoxList();
+            }
+            
+            redrawCanvas();
+        }
+        
+        function redrawCanvas() {
+            if (!capturedFrame) return;
+            
+            const img = new Image();
+            img.onload = () => {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                const scale = capturedFrame.scale || 1;
+                boundingBoxes.forEach((box, i) => {
+                    ctx.strokeStyle = '#00ff00';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(box.x1 * scale, box.y1 * scale, (box.x2 - box.x1) * scale, (box.y2 - box.y1) * scale);
+                    
+                    ctx.fillStyle = '#00ff00';
+                    ctx.font = '14px Arial';
+                    ctx.fillText(box.class_name, box.x1 * scale, box.y1 * scale - 5);
+                });
+            };
+            img.src = 'data:image/jpeg;base64,' + capturedFrame.imageData;
+        }
+        
+        function updateBoxList() {
+            const list = document.getElementById('box-list');
+            list.innerHTML = boundingBoxes.map((box, i) => `
+                <div class="box-item">
+                    <span>${box.class_name} (${box.x1}, ${box.y1}) - (${box.x2}, ${box.y2})</span>
+                    <span class="delete-box" onclick="deleteBox(${i})">✕</span>
+                </div>
+            `).join('');
+        }
+        
+        function deleteBox(index) {
+            boundingBoxes.splice(index, 1);
+            updateBoxList();
+            redrawCanvas();
+        }
+        
+        function updateClassSuggestions() {
+            const datalist = document.getElementById('class-suggestions');
+            datalist.innerHTML = usedClassNames.map(name => `<option value="${name}">`).join('');
+        }
+        
+        function clearAnnotation() {
+            capturedFrame = null;
+            boundingBoxes = [];
+            
+            const container = document.getElementById('canvas-container');
+            const placeholder = document.getElementById('canvas-placeholder');
+            
+            canvas.style.display = 'none';
+            placeholder.style.display = 'block';
+            container.classList.remove('has-image');
+            
+            updateBoxList();
+            document.getElementById('save-annotation-btn').disabled = true;
+        }
+
+        async function saveAnnotation() {
+            if (!capturedFrame || boundingBoxes.length === 0) {
+                alert('请先截图并添加标注框');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/training/annotations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_filename: currentVideoFilename,
+                        frame_timestamp: capturedFrame.timestamp,
+                        frame_number: capturedFrame.frameNumber,
+                        image_data: capturedFrame.imageData,
+                        bounding_boxes: boundingBoxes,
+                        image_width: capturedFrame.width,
+                        image_height: capturedFrame.height
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    alert('标注保存成功!');
+                    clearAnnotation();
+                    loadAnnotations();
+                } else {
+                    alert('保存失败: ' + data.error);
+                }
+            } catch (e) {
+                alert('保存失败: ' + e.message);
+            }
+        }
+        
+        async function loadAnnotations() {
+            try {
+                const response = await fetch('/training/annotations');
+                const annotations = await response.json();
+                
+                const gallery = document.getElementById('annotation-gallery');
+                
+                if (annotations.length === 0) {
+                    gallery.innerHTML = '<div class="empty-state">暂无标注图片</div>';
+                    return;
+                }
+                
+                gallery.innerHTML = annotations.map(ann => `
+                    <div class="gallery-item ${selectedAnnotations.has(ann.annotation_id) ? 'selected' : ''}" data-id="${ann.annotation_id}">
+                        <input type="checkbox" ${selectedAnnotations.has(ann.annotation_id) ? 'checked' : ''} onchange="toggleAnnotationSelection('${ann.annotation_id}', this.checked)">
+                        <img src="data:image/jpeg;base64,${ann.thumbnail}" onclick="viewAnnotation('${ann.annotation_id}')">
+                        <div class="info">
+                            <div>${ann.class_names.join(', ')}</div>
+                            <div>${ann.box_count} 个标注框</div>
+                        </div>
+                        <button class="delete-btn" onclick="deleteAnnotation('${ann.annotation_id}')">✕</button>
+                    </div>
+                `).join('');
+                
+                // Update class suggestions from existing annotations
+                annotations.forEach(ann => {
+                    ann.class_names.forEach(name => {
+                        if (!usedClassNames.includes(name)) {
+                            usedClassNames.push(name);
+                        }
+                    });
+                });
+                updateClassSuggestions();
+                updateSelectedCount();
+                
+            } catch (e) {
+                console.error('Error loading annotations:', e);
+            }
+        }
+        
+        function toggleAnnotationSelection(id, checked) {
+            if (checked) {
+                selectedAnnotations.add(id);
+            } else {
+                selectedAnnotations.delete(id);
+            }
+            updateSelectedCount();
+            
+            const item = document.querySelector(`.gallery-item[data-id="${id}"]`);
+            if (item) {
+                item.classList.toggle('selected', checked);
+            }
+        }
+        
+        function selectAllAnnotations() {
+            document.querySelectorAll('.gallery-item').forEach(item => {
+                const id = item.dataset.id;
+                selectedAnnotations.add(id);
+                item.classList.add('selected');
+                item.querySelector('input[type="checkbox"]').checked = true;
+            });
+            updateSelectedCount();
+        }
+        
+        function deselectAllAnnotations() {
+            selectedAnnotations.clear();
+            document.querySelectorAll('.gallery-item').forEach(item => {
+                item.classList.remove('selected');
+                item.querySelector('input[type="checkbox"]').checked = false;
+            });
+            updateSelectedCount();
+        }
+        
+        function updateSelectedCount() {
+            document.getElementById('selected-count').textContent = `已选: ${selectedAnnotations.size}`;
+            document.getElementById('generate-dataset-btn').disabled = selectedAnnotations.size === 0;
+        }
+        
+        async function viewAnnotation(id) {
+            try {
+                const response = await fetch(`/training/annotations/${id}`);
+                const ann = await response.json();
+                
+                // Display in annotation canvas
+                capturedFrame = {
+                    imageData: ann.image_data,
+                    width: ann.image_width,
+                    height: ann.image_height,
+                    frameNumber: ann.frame_number,
+                    timestamp: ann.frame_timestamp
+                };
+                
+                boundingBoxes = ann.bounding_boxes;
+                displayCapturedFrame();
+                setTimeout(redrawCanvas, 100);
+                updateBoxList();
+                document.getElementById('save-annotation-btn').disabled = true;
+                
+            } catch (e) {
+                alert('加载标注失败: ' + e.message);
+            }
+        }
+        
+        async function deleteAnnotation(id) {
+            if (!confirm('确定要删除这个标注吗?')) return;
+            
+            try {
+                const response = await fetch(`/training/annotations/${id}`, { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    selectedAnnotations.delete(id);
+                    loadAnnotations();
+                } else {
+                    alert('删除失败');
+                }
+            } catch (e) {
+                alert('删除失败: ' + e.message);
+            }
+        }
+        
+        async function generateDataset() {
+            const name = document.getElementById('dataset-name').value.trim();
+            if (!name) {
+                alert('请输入数据集名称');
+                return;
+            }
+            
+            const trainRatio = parseFloat(document.getElementById('train-ratio').value);
+            const valRatio = parseFloat(document.getElementById('val-ratio').value);
+            const testRatio = parseFloat(document.getElementById('test-ratio').value);
+            
+            if (Math.abs(trainRatio + valRatio + testRatio - 1.0) > 0.01) {
+                alert('训练集、验证集、测试集比例之和必须等于1');
+                return;
+            }
+            
+            const statusDiv = document.getElementById('dataset-status');
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = '正在生成数据集...';
+            
+            try {
+                const response = await fetch('/training/dataset/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        annotation_ids: Array.from(selectedAnnotations),
+                        train_ratio: trainRatio,
+                        val_ratio: valRatio,
+                        test_ratio: testRatio,
+                        dataset_name: name
+                    })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    statusDiv.innerHTML = `
+                        <div style="color: #27ae60;">✓ 数据集生成成功!</div>
+                        <div>路径: ${data.dataset_path}</div>
+                        <div>训练集: ${data.train_count} | 验证集: ${data.val_count} | 测试集: ${data.test_count}</div>
+                        <div>类别: ${data.class_names.join(', ')}</div>
+                    `;
+                    loadDatasets();
+                } else {
+                    statusDiv.innerHTML = `<div style="color: #e74c3c;">✕ 生成失败: ${data.error}</div>`;
+                }
+            } catch (e) {
+                statusDiv.innerHTML = `<div style="color: #e74c3c;">✕ 生成失败: ${e.message}</div>`;
+            }
+        }
+        
+        async function loadDatasets() {
+            try {
+                const response = await fetch('/training/datasets');
+                const datasets = await response.json();
+                
+                const select = document.getElementById('dataset-select');
+                select.innerHTML = '<option value="">-- 选择数据集 --</option>';
+                
+                datasets.forEach(ds => {
+                    const option = document.createElement('option');
+                    option.value = ds.path;
+                    option.textContent = `${ds.name} (${ds.class_count} 类)`;
+                    select.appendChild(option);
+                });
+            } catch (e) {
+                console.error('Error loading datasets:', e);
+            }
+        }
+        
+        async function startTraining() {
+            const datasetPath = document.getElementById('dataset-select').value;
+            if (!datasetPath) {
+                alert('请选择数据集');
+                return;
+            }
+            
+            const config = {
+                base_model: document.getElementById('base-model').value,
+                dataset_path: datasetPath,
+                epochs: parseInt(document.getElementById('epochs').value),
+                batch_size: parseInt(document.getElementById('batch-size').value),
+                learning_rate: parseFloat(document.getElementById('learning-rate').value),
+                image_size: parseInt(document.getElementById('image-size').value),
+                lora_rank: parseInt(document.getElementById('lora-rank').value),
+                lora_alpha: parseInt(document.getElementById('lora-alpha').value),
+                lora_dropout: parseFloat(document.getElementById('lora-dropout').value)
+            };
+            
+            try {
+                const response = await fetch('/training/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    currentTrainingTaskId = data.task_id;
+                    document.getElementById('training-progress').style.display = 'block';
+                    document.getElementById('start-training-btn').disabled = true;
+                    startProgressPolling();
+                } else {
+                    alert('启动训练失败: ' + data.error);
+                }
+            } catch (e) {
+                alert('启动训练失败: ' + e.message);
+            }
+        }
+        
+        function startProgressPolling() {
+            progressInterval = setInterval(async () => {
+                if (!currentTrainingTaskId) return;
+                
+                try {
+                    const response = await fetch(`/training/progress/${currentTrainingTaskId}`);
+                    const data = await response.json();
+                    
+                    updateProgressUI(data);
+                    
+                    if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+                        stopProgressPolling();
+                        document.getElementById('start-training-btn').disabled = false;
+                        loadTrainedModels();
+                    }
+                } catch (e) {
+                    console.error('Error polling progress:', e);
+                }
+            }, 2000);
+        }
+        
+        function stopProgressPolling() {
+            if (progressInterval) {
+                clearInterval(progressInterval);
+                progressInterval = null;
+            }
+        }
+        
+        function updateProgressUI(data) {
+            document.getElementById('progress-status').textContent = `状态: ${data.status}`;
+            document.getElementById('progress-bar').style.width = `${data.progress_percentage}%`;
+            document.getElementById('progress-epoch').textContent = `Epoch: ${data.current_epoch}/${data.total_epochs}`;
+            document.getElementById('progress-loss').textContent = `Loss: ${data.current_loss.toFixed(4)}`;
+            document.getElementById('progress-map').textContent = `mAP: ${data.best_map.toFixed(4)}`;
+            
+            if (data.eta_seconds) {
+                const minutes = Math.floor(data.eta_seconds / 60);
+                const seconds = data.eta_seconds % 60;
+                document.getElementById('progress-eta').textContent = `预计剩余: ${minutes}分${seconds}秒`;
+            }
+            
+            if (data.error_message) {
+                document.getElementById('progress-status').textContent = `错误: ${data.error_message}`;
+            }
+        }
+        
+        async function cancelTraining() {
+            if (!currentTrainingTaskId) return;
+            
+            if (!confirm('确定要取消训练吗?')) return;
+            
+            try {
+                const response = await fetch(`/training/cancel/${currentTrainingTaskId}`, { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
+            } catch (e) {
+                alert('取消失败: ' + e.message);
+            }
+        }
+        
+        async function loadTrainedModels() {
+            try {
+                const response = await fetch('/training/models');
+                const data = await response.json();
+                
+                const container = document.getElementById('trained-models');
+                
+                if (data.models.length === 0) {
+                    container.innerHTML = '<div class="empty-state">暂无已训练模型</div>';
+                    return;
+                }
+                
+                container.innerHTML = data.models.map(model => `
+                    <div class="box-item" style="margin-bottom: 10px;">
+                        <div>
+                            <strong>${model.model_name}</strong>
+                            <div style="font-size: 12px; color: #666;">
+                                基础模型: ${model.base_model} | Epochs: ${model.epochs} | mAP: ${model.best_map.toFixed(4)}
+                            </div>
+                            <div style="font-size: 12px; color: #999;">${new Date(model.created_at).toLocaleString()}</div>
+                        </div>
+                        <button class="btn-primary" onclick="downloadModel('${model.task_id}')" style="padding: 5px 15px;">下载</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Error loading models:', e);
+            }
+        }
+        
+        function downloadModel(taskId) {
+            window.location.href = `/training/download/${taskId}`;
+        }
+    </script>
+</body>
+</html>

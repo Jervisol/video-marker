@@ -27,6 +27,10 @@ app = FastAPI(title="Video Marker System", version="1.0.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# 导入并注册训练模块路由
+from training import router as training_router
+app.include_router(training_router)
+
 # 线程池用于处理CPU密集型任务（模型推理）
 executor = ThreadPoolExecutor(max_workers=4)
 
